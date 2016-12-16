@@ -8,10 +8,16 @@ import (
 	"math"
 	"time"
 
+	"github.com/golang/freetype/truetype"
+
+	"image/color"
+	"image/draw"
 	_ "image/jpeg"
 
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/math/fixed"
 	"golang.org/x/mobile/app"
-	"golang.org/x/mobile/asset"
 	"golang.org/x/mobile/event/lifecycle"
 	"golang.org/x/mobile/event/paint"
 	"golang.org/x/mobile/event/size"
@@ -22,6 +28,7 @@ import (
 	"golang.org/x/mobile/exp/sprite"
 	"golang.org/x/mobile/exp/sprite/clock"
 	"golang.org/x/mobile/exp/sprite/glsprite"
+	"golang.org/x/mobile/geom"
 	"golang.org/x/mobile/gl"
 )
 
@@ -35,10 +42,18 @@ var (
 	affine    *f32.Affine
 )
 
+const (
+	spriteWidth  = 250
+	spriteHeight = 40
+	spriteX      = 200
+	spriteY      = 200
+)
+
+var sz size.Event
+
 func main() {
 	app.Main(func(a app.App) {
 		var glctx gl.Context
-		var sz size.Event
 		for e := range a.Events() {
 			switch e := a.Filter(e).(type) {
 			case lifecycle.Event:
@@ -109,10 +124,6 @@ func loadScene() {
 
 	n = newNode()
 	eng.SetSubTex(n, texs[texGopherR])
-	spriteWidth := float32(140)
-	spriteHeight := float32(90)
-	spriteX := float32(200)
-	spriteY := float32(200)
 	n.Arranger = arrangerFunc(func(eng sprite.Engine, n *sprite.Node, t clock.Time) {
 		radian := float32(degree) * math.Pi / 180
 
@@ -145,23 +156,59 @@ const (
 )
 
 func loadTextures() []sprite.SubTex {
-	a, err := asset.Open("waza-gophers.jpeg")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer a.Close()
+	text := "Hello, Gopher!"
+	fontsize := float64(30)
+	dpi := float64(72)
+	img := images.NewImage(spriteWidth, spriteHeight)
 
-	img, _, err := image.Decode(a)
+	c := color.RGBA{255, 0, 0, 255}
+	fg, bg := image.NewUniform(c), image.Black
+	draw.Draw(img.RGBA, img.RGBA.Bounds(), bg, image.Point{}, draw.Src)
+
+	// Draw the text.
+	h := font.HintingNone
+
+	gofont, err := truetype.Parse(goregular.TTF)
 	if err != nil {
-		log.Fatal(err)
+		panic("failed to load font!")
 	}
-	t, err := eng.LoadTexture(img)
+
+	d := &font.Drawer{
+		Dst: img.RGBA,
+		Src: fg,
+		Face: truetype.NewFace(gofont, &truetype.Options{
+			Size:    fontsize,
+			DPI:     dpi,
+			Hinting: h,
+		}),
+	}
+
+	textWidth := d.MeasureString(text)
+
+	d.Dot = fixed.Point26_6{
+		X: fixed.I(spriteWidth/2) - textWidth/2,
+		Y: fixed.I(int(fontsize * dpi / 72)),
+	}
+	d.DrawString(text)
+
+	img.Upload()
+
+	scale := geom.Pt(4)
+	img.Draw(
+		sz,
+		geom.Point{X: 0, Y: (sz.HeightPt - geom.Pt(spriteHeight)/scale)},
+		geom.Point{X: geom.Pt(spriteWidth) / scale, Y: (sz.HeightPt - geom.Pt(spriteHeight)/scale)},
+		geom.Point{X: 0, Y: (sz.HeightPt - geom.Pt(spriteHeight)/scale)},
+		img.RGBA.Bounds().Inset(1),
+	)
+
+	t, err := eng.LoadTexture(img.RGBA)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return []sprite.SubTex{
-		texGopherR: sprite.SubTex{T: t, R: image.Rect(152, 10, 152+140, 10+90)},
+		texGopherR: sprite.SubTex{T: t, R: image.Rect(0, 0, spriteWidth, spriteHeight)},
 	}
 }
 
